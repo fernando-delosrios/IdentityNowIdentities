@@ -22,6 +22,7 @@ import {
     PostExternalExecuteWorkflowRequestBeta,
     WorkflowOAuthClientBeta,
     WorkflowsBetaApiFactory,
+    TransformsBetaApi,
 } from 'sailpoint-api-client'
 import { AxiosRequestConfig } from 'axios'
 import {
@@ -30,6 +31,7 @@ import {
     EntitlementDocument,
     IdentityDocument,
     JsonPatchOperation,
+    TransformsApi,
 } from 'sailpoint-api-client/dist/v3'
 import { URL } from 'url'
 

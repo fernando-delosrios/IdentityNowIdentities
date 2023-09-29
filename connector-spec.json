@@ -81,9 +81,9 @@
                     "sectionHelpMessage": "Add your configuration details here",
                     "items": [
                         {
-                            "key": "authoritative.sources",
-                            "label": "List of original authoritative sources to consolidate",
-                            "type": "list"
+                            "key": "authoritative.template",
+                            "label": "Template string for identity",
+                            "type": "text"
                         }
                     ]
                 },
