@@ -7,59 +7,102 @@ import {
     StdAccountDiscoverSchemaHandler,
     SchemaAttribute,
     StdAccountReadHandler,
-    StdAccountCreateHandler,
-    StdAccountCreateOutput,
-    StdEntitlementListHandler,
-    StdEntitlementListOutput,
     StdAccountListOutput,
+    ConnectorErrorType,
 } from '@sailpoint/connector-sdk'
 import { SDKClient } from './sdk-client'
+import { Account, IdentityAttributeConfigBeta, IdentityDocument, Source } from 'sailpoint-api-client'
+import { UniqueIDTransform } from './model/transform'
+import { getOwnerFromSource, getCurrentSource, WORKFLOW_NAME, getEmailWorkflow, getIdentities } from './utils'
+import { Email, ErrorEmail } from './model/email'
 import { UniqueAccount } from './model/account'
-import { Account, AttributeDefinition, Source } from 'sailpoint-api-client'
 
-const getUniqueID = (id: string, currentIDs: string[]) => {
-    let counter = 1
-    let candidate = id
-    while (currentIDs.includes(candidate)) {
-        candidate = id + counter++
+const buildUniqueAccount = (account: Account): UniqueAccount => {
+    return {
+        identity: account.nativeIdentity,
+        uuid: account.name,
+        attributes: account.attributes,
     }
-    currentIDs.push(candidate)
-
-    return candidate
 }
 
 export const authoritative = async (config: any) => {
-    const { baseurl, clientId, clientSecret, 'authoritative.template': template } = config
+    const { baseurl, clientId, clientSecret, 'authoritative.transform': transform, id } = config
     const client = new SDKClient({ baseurl, clientId, clientSecret })
+    const source = await getCurrentSource(client, config)
 
-    const getCurrentSource = async (config: any): Promise<Source | undefined> => {
-        const sources = (await client.listSources()).find((x) => (x.connectorAttributes as any).id === config.id)
-
-        return sources
+    if (!source) {
+        throw new Error('No connector source was found on the tenant.')
     }
 
-    const getSourcesByName = async (names: string[]): Promise<Source[]> => {
-        const sources = await client.listSources()
+    const owner = getOwnerFromSource(source)
+    const name = `${id} - ${WORKFLOW_NAME}`
+    const workflow = await getEmailWorkflow(client, name, owner)
 
-        return sources.filter((x) => names.includes(x.name))
+    if (!workflow) {
+        throw new Error('Unable to instantiate email workflow')
     }
 
-    const getCurrentAccounts = async (): Promise<Account[]> => {
-        const source = await getCurrentSource(config)
+    const sendEmail = async (email: Email) => {
+        await client.testWorkflow(workflow.id!, email)
+    }
 
-        if (!source) {
-            throw new Error('No connector source was found on the tenant.')
+    const logError = async (error: string) => {
+        logger.error(error)
+        const email = new ErrorEmail(source, error)
+        await sendEmail(email)
+    }
+
+    const getUniqueID = async (
+        identity: IdentityDocument,
+        currentIDs: string[],
+        transformName: string | undefined,
+        source: Source
+    ): Promise<string | undefined> => {
+        const transformRequest = new UniqueIDTransform(source.name)
+        let name: string
+
+        if (transformName) {
+            name = transformName
+        } else {
+            name = transformRequest.name
         }
 
-        const currentAccounts = await client.listAccountsBySource(source.id!)
+        let transform = await client.getTransformByName(name)
+        if (!transform) {
+            const transformRequest = new UniqueIDTransform(source.name)
+            transform = await client.createTransform(transformRequest)
+        }
 
-        return currentAccounts
+        const transformDefinition = {
+            type: 'accountAttribute',
+            attributes: {
+                applicationId: source.id,
+                attributeName: 'id',
+                sourceName: source.name,
+                id: name,
+                type: 'reference',
+            },
+        }
+        const config: IdentityAttributeConfigBeta = {
+            attributeTransforms: [{ identityAttributeName: 'uid', transformDefinition }],
+            enabled: true,
+        }
+
+        let counter = 1
+        let id = await client.testTransform(identity.id, config)
+        let candidate = id
+        if (id) {
+            while (currentIDs.includes(candidate!)) {
+                candidate = id + counter++
+            }
+        }
+
+        return candidate
     }
 
     //==============================================================================================================
 
     const stdTest: StdTestConnectionHandler = async (context, input, res) => {
-        const source = await getCurrentSource(config)
         if (source) {
             logger.info('Test successful!')
             res.send({})
@@ -69,51 +112,41 @@ export const authoritative = async (config: any) => {
     }
 
     const stdAccountList: StdAccountListHandler = async (context, input, res) => {
-        const source = await getCurrentSource(config)
-        const accounts: StdAccountListOutput[] = []
+        const accounts: UniqueAccount[] = []
 
-        if (!source) {
-            throw new Error('No connector source was found on the tenant.')
-        }
-
-        const identities = await client.listIdentities()
+        const { identities } = await getIdentities(client, source)
         const currentAccounts = await client.listAccountsBySource(source.id!)
+        const currentIDs = currentAccounts.filter((x) => x.uncorrelated === false).map((x) => x.nativeIdentity)
 
         for (const identity of identities) {
-            const currentAccount = currentAccounts.find(x => x.identityId === identity.id)
-            if (currentAccount) {
-                const account:StdAccountListOutput = {
-                    identity: currentAccount.nativeIdentity,
-                    uuid: currentAccount.name,
-                    attributes: currentAccount.attributes
+            try {
+                const currentAccount = currentAccounts.find((x) => x.identityId === identity.id)
+                if (currentAccount) {
+                    const account = buildUniqueAccount(currentAccount)
+                    accounts.push(account)
+                } else {
+                    const uniqueID = await getUniqueID(identity, currentIDs, transform, source)
+                    if (uniqueID) {
+                        currentIDs.push(uniqueID)
+                        const account: UniqueAccount = {
+                            identity: uniqueID,
+                            uuid: identity.attributes!.uid,
+                            attributes: {
+                                id: uniqueID,
+                                name: identity.attributes!.uid,
+                                email: identity.attributes!.email,
+                            },
+                        }
+                        accounts.push(account)
+                    } else {
+                        const error = `Failed to generate unique ID for ${identity.attributes!.uid}`
+                        await logError(error)
+                    }
                 }
-                accounts.push(account)
-            } else {
-                const uniqueID = getUniqueID()
-            }
-        }
-
-        const currentIDs = currentAccounts.map((x) => x.nativeIdentity)
-
-        let sourceAccounts: Account[] = []
-        for (const source of sourceList) {
-            const accounts = await client.listAccountsBySource(source.id!)
-            sourceAccounts = [...sourceAccounts, ...accounts]
-        }
-
-        for (const sourceAccount of sourceAccounts) {
-            let uniqueID: string
-            const currentAccount = currentAccounts.find(
-                (x) =>
-                    x.attributes.nativeId === sourceAccount.nativeIdentity &&
-                    x.attributes.source === sourceAccount.sourceName
-            )
-            if (currentAccount) {
-                uniqueID = currentAccount.nativeIdentity!
-                const account = new UniqueAccount(uniqueID, sourceAccount)
-                accounts.push(account)
-            } else {
-                // uniqueID = getUniqueID(sourceAccount.nativeIdentity, currentIDs)
+            } catch (e) {
+                if (e instanceof Error) {
+                    await logError(e.message)
+                }
             }
         }
 
@@ -124,24 +157,23 @@ export const authoritative = async (config: any) => {
     }
 
     const stdAccountRead: StdAccountReadHandler = async (context, input, res) => {
-        const source = await getCurrentSource(config)
-
-        if (!source) {
-            throw new Error('No connector source was found on the tenant.')
-        }
-
+        logger.info(input)
         const currentAccounts = await client.listAccountsBySource(source.id!)
         const currentAccount = currentAccounts.find((x) => x.nativeIdentity === input.identity)
         if (currentAccount) {
-            const account = new UniqueAccount(currentAccount.nativeIdentity, currentAccount)
+            const account = {
+                identity: currentAccount.nativeIdentity,
+                uuid: currentAccount.name,
+                attributes: currentAccount.attributes,
+            }
             logger.info(account)
             res.send(account)
+        } else {
+            throw new ConnectorError('Account not found', ConnectorErrorType.NotFound)
         }
     }
 
     const stdAccountDiscoverSchema: StdAccountDiscoverSchemaHandler = async (context, input, res) => {
-        const sourceList = await getSourcesByName(sources)
-        let sourceAttributes: AttributeDefinition[] = []
         const attributes: SchemaAttribute[] = [
             {
                 name: 'id',
@@ -150,41 +182,15 @@ export const authoritative = async (config: any) => {
             },
             {
                 name: 'name',
-                description: 'Native account name',
+                description: 'Name',
                 type: 'string',
             },
             {
-                name: 'nativeId',
-                description: 'Native account ID',
-                type: 'string',
-            },
-            {
-                name: 'source',
-                description: 'Native account source',
+                name: 'email',
+                description: 'Email',
                 type: 'string',
             },
         ]
-        // for (const source of sourceList) {
-        //     const schemas = await client.listSourceSchemas(source.id!)
-        //     for (const schema of schemas) {
-        //         if (schema.name === 'account') {
-        //             for (const attribute of schema.attributes ? schema.attributes : []) {
-        //                 if (!attributes.find((x) => x.name === attribute.name!)) {
-        //                     const description = attribute.description
-        //                         ? `${source.name} - ${attribute.description!}`
-        //                         : source.name
-        //                     const schemaAttribute: SchemaAttribute = {
-        //                         name: attribute.name!,
-        //                         description,
-        //                         type: attribute.type!.toLowerCase(),
-        //                         multi: attribute.isMultiValued,
-        //                     }
-        //                     attributes.push(schemaAttribute)
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
 
         const schema: any = {
             attributes,

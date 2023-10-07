@@ -23,6 +23,10 @@ import {
     WorkflowOAuthClientBeta,
     WorkflowsBetaApiFactory,
     TransformsBetaApi,
+    TransformBeta,
+    IdentityProfilesBetaApi,
+    IdentityProfilesBetaApiGenerateIdentityPreviewRequest,
+    IdentityAttributeConfigBeta,
 } from 'sailpoint-api-client'
 import { AxiosRequestConfig } from 'axios'
 import {
@@ -31,6 +35,7 @@ import {
     EntitlementDocument,
     IdentityDocument,
     JsonPatchOperation,
+    Transform,
     TransformsApi,
 } from 'sailpoint-api-client/dist/v3'
 import { URL } from 'url'
@@ -146,6 +151,21 @@ export class SDKClient {
         return response.data
     }
 
+    async listUncorrelatedAccounts(): Promise<Account[]> {
+        const api = new AccountsApi(this.config)
+        const filters = 'uncorrelated eq true'
+        const search = async (
+            requestParameters?: AccountsApiListAccountsRequest | undefined,
+            axiosOptions?: AxiosRequestConfig<any> | undefined
+        ) => {
+            return await api.listAccounts({ ...requestParameters, filters })
+        }
+
+        const response = await Paginator.paginate(api, search, undefined, this.batchSize)
+
+        return response.data
+    }
+
     // async getIdenticalIdentities(sourceId: string, attributes: object): Promise<IdentityDocument[]> {
     //     if (Object.keys(attributes).length > 0) {
     //         const conditions: string[] = []
@@ -205,7 +225,7 @@ export class SDKClient {
     async listSources() {
         const api = new SourcesApi(this.config)
 
-        const response = await Paginator.paginate(api, api.listSources, undefined, this.batchSize)
+        const response = await Paginator.paginate(api, api.listSources)
 
         return response.data
     }
@@ -238,6 +258,14 @@ export class SDKClient {
         const response = await api.searchFormInstancesByTenant()
 
         return response.data.results ? response.data.results : []
+    }
+
+    async createTransform(transform: Transform): Promise<Transform> {
+        const api = new TransformsApi(this.config)
+
+        const response = await api.createTransform({ transform })
+
+        return response.data
     }
 
     async listWorkflows(): Promise<WorkflowBeta[]> {
@@ -357,6 +385,7 @@ export class SDKClient {
 
     async listEntitlementsBySource(sourceId: string): Promise<EntitlementDocument[]> {
         const api = new SearchApi(this.config)
+
         const search: Search = {
             indices: ['entitlements'],
             query: {
@@ -368,5 +397,28 @@ export class SDKClient {
         const response = await api.searchPost({ search })
 
         return response.data
+    }
+
+    async getTransformByName(name: string): Promise<Transform | undefined> {
+        const api = new TransformsApi(this.config)
+
+        const response = await api.listTransforms()
+
+        return response.data.find((x) => x.name === name)
+    }
+
+    async testTransform(
+        identityId: string,
+        identityAttributeConfig: IdentityAttributeConfigBeta
+    ): Promise<string | undefined> {
+        const api = new IdentityProfilesBetaApi(this.config)
+
+        const response = await api.generateIdentityPreview({
+            identityPreviewRequestBeta: { identityId, identityAttributeConfig },
+        })
+        const attributes = response.data.previewAttributes
+        const testAttribute = attributes?.find((x) => x.name === 'uid')
+
+        return testAttribute && testAttribute.value ? testAttribute.value.toString() : undefined
     }
 }

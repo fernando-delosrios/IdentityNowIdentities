@@ -1,5 +1,6 @@
 import {
     CreateWorkflowRequestBeta,
+    Owner,
     WorkflowBodyOwnerBeta,
     WorkflowsBetaApiCreateWorkflowRequest,
 } from 'sailpoint-api-client'
@@ -7,10 +8,10 @@ import {
 export class EmailWorkflow implements WorkflowsBetaApiCreateWorkflowRequest {
     createWorkflowRequestBeta: CreateWorkflowRequestBeta
 
-    constructor(name: string, owner: WorkflowBodyOwnerBeta) {
+    constructor(name: string, owner: Owner) {
         this.createWorkflowRequestBeta = {
             name,
-            owner,
+            owner: owner as WorkflowBodyOwnerBeta,
             definition: {
                 start: 'Send Email',
                 steps: {

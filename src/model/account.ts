@@ -10,6 +10,8 @@ export class MergedAccount {
         const now = new Date().toISOString()
         let history: string[]
         let finalStatus = status ? [status] : []
+        const name = typeof account === 'string' ? account : (account.name as string)
+
         if (typeof account === 'string') {
             history = []
         } else {
@@ -25,10 +27,40 @@ export class MergedAccount {
         }
 
         this.attributes = {
-            id: typeof account === 'string' ? account : (account.name as string),
+            id: name,
+            name,
             history,
             status: finalStatus,
             reviews: [],
+        }
+
+        this.identity = this.attributes.id as string
+        this.uuid = this.attributes.id as string
+    }
+}
+
+export class OrphanAccount {
+    identity: string
+    uuid: string
+    attributes: Attributes
+
+    constructor(account: Account, message?: string, status?: string) {
+        const now = new Date().toISOString()
+        const history: string[] = []
+        const name = account.name
+        const source = account.sourceName
+
+        if (message) {
+            history.push(`[${now}] ${message}`)
+        }
+
+        this.attributes = {
+            id: name,
+            name,
+            source,
+            history,
+            reviews: [],
+            status: status ? status : null,
         }
 
         this.identity = this.attributes.id as string
