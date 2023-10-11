@@ -7,11 +7,11 @@ import {
     StdAccountDiscoverSchemaHandler,
     SchemaAttribute,
     StdAccountReadHandler,
-    StdAccountListOutput,
     ConnectorErrorType,
+    Context,
 } from '@sailpoint/connector-sdk'
 import { SDKClient } from './sdk-client'
-import { Account, IdentityAttributeConfigBeta, IdentityDocument, Source } from 'sailpoint-api-client'
+import { Account, IdentityAttributeConfigBeta, IdentityDocument, Source, WorkflowBeta } from 'sailpoint-api-client'
 import { UniqueIDTransform } from './model/transform'
 import { getOwnerFromSource, getCurrentSource, WORKFLOW_NAME, getEmailWorkflow, getIdentities } from './utils'
 import { Email, ErrorEmail } from './model/email'
@@ -46,10 +46,18 @@ export const authoritative = async (config: any) => {
         await client.testWorkflow(workflow.id!, email)
     }
 
-    const logError = async (error: string) => {
-        logger.error(error)
-        const email = new ErrorEmail(source, error)
-        await sendEmail(email)
+    const logErrors = async (workflow: WorkflowBeta | undefined, context: Context, input: any, errors: string[]) => {
+        let lines = []
+        lines.push(`Context: ${JSON.stringify(context)}`)
+        lines.push(`Input: ${JSON.stringify(input)}`)
+        lines.push('Errors:')
+        lines = [...lines, ...errors]
+        const message = lines.join('\n')
+        const email = new ErrorEmail(source, message)
+
+        if (workflow) {
+            await client.testWorkflow(workflow!.id!, email)
+        }
     }
 
     const getUniqueID = async (
@@ -113,6 +121,7 @@ export const authoritative = async (config: any) => {
 
     const stdAccountList: StdAccountListHandler = async (context, input, res) => {
         const accounts: UniqueAccount[] = []
+        const errors: string[] = []
 
         const { identities } = await getIdentities(client, source)
         const currentAccounts = await client.listAccountsBySource(source.id!)
@@ -140,12 +149,14 @@ export const authoritative = async (config: any) => {
                         accounts.push(account)
                     } else {
                         const error = `Failed to generate unique ID for ${identity.attributes!.uid}`
-                        await logError(error)
+                        logger.error(error)
+                        errors.push(error)
                     }
                 }
-            } catch (e) {
-                if (e instanceof Error) {
-                    await logError(e.message)
+            } catch (error) {
+                if (error instanceof Error) {
+                    logger.error(error)
+                    errors.push(error.message)
                 }
             }
         }
@@ -153,6 +164,10 @@ export const authoritative = async (config: any) => {
         for (const account of accounts) {
             logger.info(account)
             res.send(account)
+        }
+
+        if (errors.length > 0) {
+            await logErrors(workflow, context, input, errors)
         }
     }
 

@@ -6,6 +6,7 @@ import {
     StdTestConnectionHandler,
     StdAccountDiscoverSchemaHandler,
     StdEntitlementListHandler,
+    Context,
 } from '@sailpoint/connector-sdk'
 import { SDKClient } from './sdk-client'
 import { OrphanAccount } from './model/account'
@@ -16,6 +17,7 @@ import {
     FormDefinitionResponseBeta,
     FormInstanceResponseBeta,
     IdentityDocument,
+    WorkflowBeta,
 } from 'sailpoint-api-client'
 import { Review } from './model/review'
 import { Email, ErrorEmail } from './model/email'
@@ -97,10 +99,18 @@ export const orphan = async (config: any) => {
         await client.testWorkflow(workflow.id!, email)
     }
 
-    const logErrors = async (errors: string[]) => {
-        const message = errors.toString()
+    const logErrors = async (workflow: WorkflowBeta | undefined, context: Context, input: any, errors: string[]) => {
+        let lines = []
+        lines.push(`Context: ${JSON.stringify(context)}`)
+        lines.push(`Input: ${JSON.stringify(input)}`)
+        lines.push('Errors:')
+        lines = [...lines, ...errors]
+        const message = lines.join('\n')
         const email = new ErrorEmail(source, message)
-        await sendEmail(email)
+
+        if (workflow) {
+            await client.testWorkflow(workflow!.id!, email)
+        }
     }
 
     const getFormName = (account: Account): string => {
@@ -166,7 +176,7 @@ export const orphan = async (config: any) => {
             const error = 'No reviewers were found'
             logger.error(error)
             errors.push(error)
-            await logErrors(errors)
+            await logErrors(workflow, context, input, errors)
             throw new ConnectorError(
                 'Unable to find any reviewer from the list. Please check the values exist and try again.'
             )
@@ -240,7 +250,7 @@ export const orphan = async (config: any) => {
                                     await sendEmail(email)
 
                                     await client.setFormInstanceState(currentFormInstance.id!, 'IN_PROGRESS')
-                                    
+
                                     status = 'pending'
                                     account = new OrphanAccount(uncorrelatedAccount, message, status)
                                     updateAccounts(account, accounts)
@@ -282,7 +292,7 @@ export const orphan = async (config: any) => {
         }
 
         if (errors.length > 0) {
-            logErrors(errors)
+            await logErrors(workflow, context, input, errors)
         }
     }
 
@@ -298,7 +308,7 @@ export const orphan = async (config: any) => {
                 const error = 'No reviewers were found'
                 logger.error(error)
                 errors.push(error)
-                await logErrors(errors)
+                await logErrors(workflow, context, input, errors)
                 throw new ConnectorError(
                     'Unable to find any reviewer from the list. Please check the values exist and try again.'
                 )
@@ -399,7 +409,7 @@ export const orphan = async (config: any) => {
             }
         }
         if (errors.length > 0) {
-            logErrors(errors)
+            await logErrors(workflow, context, input, errors)
         }
     }
 

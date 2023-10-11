@@ -21,11 +21,7 @@ import {
     TestWorkflowRequestBeta,
     PostExternalExecuteWorkflowRequestBeta,
     WorkflowOAuthClientBeta,
-    WorkflowsBetaApiFactory,
-    TransformsBetaApi,
-    TransformBeta,
     IdentityProfilesBetaApi,
-    IdentityProfilesBetaApiGenerateIdentityPreviewRequest,
     IdentityAttributeConfigBeta,
 } from 'sailpoint-api-client'
 import { AxiosRequestConfig } from 'axios'

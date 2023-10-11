@@ -12,7 +12,6 @@ import {
     Owner,
     SourceOwner,
 } from 'sailpoint-api-client'
-import { OrphanAccount } from './account'
 
 type Option = { label: string; value: string; subLabel?: string | null }
 
@@ -131,7 +130,11 @@ const buildOptions = (targets: IdentityDocument[], label: string, value: string)
     return options
 }
 
-const buildFormConditions = (attributes: string[], targets: IdentityDocument[], value: string): FormConditionBeta[] => {
+const buildUniqueFormConditions = (
+    attributes: string[],
+    targets: IdentityDocument[],
+    value: string
+): FormConditionBeta[] => {
     const formConditions: FormConditionBeta[] = [
         {
             ruleOperator: 'AND',
@@ -257,6 +260,53 @@ const buildFormConditions = (attributes: string[], targets: IdentityDocument[], 
     return formConditions
 }
 
+const buildOrphanFormConditions = (
+    attributes: string[],
+    targets: IdentityDocument[],
+    value: string
+): FormConditionBeta[] => {
+    const formConditions: FormConditionBeta[] = []
+
+    for (const attribute of attributes) {
+        formConditions.push({
+            ruleOperator: 'AND',
+            rules: [
+                {
+                    sourceType: 'INPUT',
+                    source: `${value}.${attribute}`,
+                    operator: 'NOT_EM',
+                    valueType: 'STRING',
+                    value: null as any,
+                },
+            ],
+            effects: [
+                {
+                    effectType: 'SET_DEFAULT_VALUE',
+                    config: {
+                        defaultValueLabel: `${value}.${attribute}` as any,
+                        element: attribute as any,
+                    },
+                },
+                {
+                    effectType: 'DISABLE',
+                    config: {
+                        element: attribute as any,
+                    },
+                },
+                {
+                    effectType: 'SET_DEFAULT_VALUE',
+                    config: {
+                        defaultValueLabel: `${value}.${attribute}` as any,
+                        element: attribute as any,
+                    },
+                },
+            ],
+        })
+    }
+
+    return formConditions
+}
+
 export class UniqueForm implements CreateFormDefinitionRequestBeta {
     public static NEW_IDENTITY = '#newIdentity#'
     name: string
@@ -303,7 +353,7 @@ export class UniqueForm implements CreateFormDefinitionRequestBeta {
         const selectionSection = buildSelectionSection(attributes)
 
         this.formElements = [topSection, identitiesSection, selectionSection]
-        this.formConditions = buildFormConditions(attributes, targets, UniqueForm.NEW_IDENTITY)
+        this.formConditions = buildUniqueFormConditions(attributes, targets, UniqueForm.NEW_IDENTITY)
     }
 }
 
@@ -342,9 +392,8 @@ export class OrphanForm implements CreateFormDefinitionRequestBeta {
 
         const topSection = buildTopSection(label, description, attributes)
         const identitiesSection = buildIdentitiesSection(options)
-        const selectionSection = buildSelectionSection(attributes)
 
-        this.formElements = [topSection, identitiesSection, selectionSection]
-        this.formConditions = buildFormConditions(attributes, targets, OrphanForm.ORPHAN_ACCOUNT)
+        this.formElements = [topSection, identitiesSection]
+        this.formConditions = buildOrphanFormConditions(attributes, targets, OrphanForm.ORPHAN_ACCOUNT)
     }
 }

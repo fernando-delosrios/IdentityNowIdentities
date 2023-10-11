@@ -1,5 +1,5 @@
 {
-    "name": "Unique Identities",
+    "name": "IdentityNow Identities",
     "commands": [
         "std:test-connection",
         "std:account:list",
@@ -185,6 +185,11 @@
                     "name": "url",
                     "type": "string",
                     "description": "Form instance URL"
+                },
+                {
+                    "name": "description",
+                    "type": "string",
+                    "description": "Description"
                 }
             ]
         }
