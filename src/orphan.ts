@@ -106,7 +106,8 @@ export const orphan = async (config: any) => {
         lines.push('Errors:')
         lines = [...lines, ...errors]
         const message = lines.join('\n')
-        const email = new ErrorEmail(source, message)
+        const recipient = await client.getIdentity(source!.id!)
+        const email = new ErrorEmail(source, recipient!.attributes!.email, message)
 
         if (workflow) {
             await client.testWorkflow(workflow!.id!, email)

@@ -15,11 +15,11 @@ export class Email implements TestWorkflowRequestBeta {
 
 export class ErrorEmail implements TestWorkflowRequestBeta {
     input: object
-    constructor(source: Source, error: string) {
-        const subject = `Unique Identities [${source.name}] error report`
+    constructor(source: Source, recipient: string, error: string) {
+        const subject = `IdentityNow Identities [${source.name}] error report`
         const body = error
         this.input = {
-            recipients: [source.owner.id],
+            recipients: recipient,
             subject,
             body,
         }
