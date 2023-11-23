@@ -122,13 +122,23 @@ const buildIdentitiesSection = (options: Option[]): FormElementBeta => {
 
 const buildOptions = (targets: IdentityDocument[], label: string, value: string): Option[] => {
     const options: Option[] = targets.map((x) => ({
-        label: x.displayName ? x.displayName : x.name,
+        label: x.id,
         value: x.id,
     }))
     options.push({ label, value })
 
     return options
 }
+
+// const buildOptions = (targets: IdentityDocument[], label: string, value: string): Option[] => {
+//     const options: Option[] = targets.map((x) => ({
+//         label: x.displayName ? x.displayName : x.name,
+//         value: x.id,
+//     }))
+//     options.push({ label, value })
+
+//     return options
+// }
 
 const buildUniqueFormConditions = (
     attributes: string[],
@@ -137,7 +147,7 @@ const buildUniqueFormConditions = (
 ): FormConditionBeta[] => {
     const formConditions: FormConditionBeta[] = [
         {
-            ruleOperator: 'AND',
+            ruleOperator: 'OR',
             rules: [
                 {
                     sourceType: 'ELEMENT',
@@ -146,19 +156,6 @@ const buildUniqueFormConditions = (
                     valueType: 'STRING',
                     value: value as any,
                 },
-            ],
-            effects: [
-                {
-                    effectType: 'HIDE',
-                    config: {
-                        element: 'selectionSection' as any,
-                    },
-                },
-            ],
-        },
-        {
-            ruleOperator: 'AND',
-            rules: [
                 {
                     sourceType: 'ELEMENT',
                     source: 'identities',
@@ -267,40 +264,44 @@ const buildOrphanFormConditions = (
 ): FormConditionBeta[] => {
     const formConditions: FormConditionBeta[] = []
 
-    for (const attribute of attributes) {
+    formConditions.push({
+        ruleOperator: 'AND',
+        rules: [
+            {
+                sourceType: 'INPUT',
+                source: 'account',
+                operator: 'NOT_EM',
+                valueType: 'STRING',
+                value: null as any,
+            },
+        ],
+        effects: attributes.map((attribute) => ({
+            effectType: 'DISABLE',
+            config: {
+                element: attribute as any,
+            },
+        })),
+    })
+
+    for (const target of targets) {
         formConditions.push({
             ruleOperator: 'AND',
             rules: [
                 {
-                    sourceType: 'INPUT',
-                    source: `${value}.${attribute}`,
-                    operator: 'NOT_EM',
+                    sourceType: 'ELEMENT',
+                    source: 'identities',
+                    operator: 'EQ',
                     valueType: 'STRING',
-                    value: null as any,
+                    value: target.id as any,
                 },
             ],
-            effects: [
-                {
-                    effectType: 'SET_DEFAULT_VALUE',
-                    config: {
-                        defaultValueLabel: `${value}.${attribute}` as any,
-                        element: attribute as any,
-                    },
+            effects: attributes.map((attribute) => ({
+                effectType: 'SET_DEFAULT_VALUE',
+                config: {
+                    defaultValueLabel: `${target.id}.${attribute}` as any,
+                    element: attribute as any,
                 },
-                {
-                    effectType: 'DISABLE',
-                    config: {
-                        element: attribute as any,
-                    },
-                },
-                {
-                    effectType: 'SET_DEFAULT_VALUE',
-                    config: {
-                        defaultValueLabel: `${value}.${attribute}` as any,
-                        element: attribute as any,
-                    },
-                },
-            ],
+            })),
         })
     }
 
@@ -308,7 +309,8 @@ const buildOrphanFormConditions = (
 }
 
 export class UniqueForm implements CreateFormDefinitionRequestBeta {
-    public static NEW_IDENTITY = '#newIdentity#'
+    // public static NEW_IDENTITY = '#newIdentity#'
+    public static NEW_IDENTITY = 'This is a new identy'
     name: string
     formInput: FormDefinitionInputBeta[] | undefined
     formElements: FormElementBeta[] | undefined
@@ -358,7 +360,8 @@ export class UniqueForm implements CreateFormDefinitionRequestBeta {
 }
 
 export class OrphanForm implements CreateFormDefinitionRequestBeta {
-    public static ORPHAN_ACCOUNT = '#orphanAccount#'
+    // public static ORPHAN_ACCOUNT = '#orphanAccount#'
+    public static ORPHAN_ACCOUNT = 'I cannot find a match'
     name: string
     description: string
     formInput: FormDefinitionInputBeta[] | undefined
@@ -367,7 +370,7 @@ export class OrphanForm implements CreateFormDefinitionRequestBeta {
     owner: FormOwnerBeta
 
     constructor(name: string, owner: Owner, account: Account, targets: IdentityDocument[], attributes: string[]) {
-        const friendlyName = `${account.name}@${account.sourceName}`
+        const friendlyName = `${account.name} on ${account.sourceName}`
         this.name = name
         this.owner = owner as FormOwnerBeta
         this.description = friendlyName

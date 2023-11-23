@@ -340,12 +340,16 @@ export const orphan = async (config: any) => {
                             x.nativeIdentity === uncorrelatedAccount.nativeIdentity &&
                             x.attributes.source === uncorrelatedAccount.sourceName
                     )
-                    if (!uncorrelatedAccount.name || processedAccount || uncorrelatedAccount.sourceId === source.id) {
-                        continue
-                    }
                     let currentFormInstance: FormInstanceResponseBeta | undefined
                     const formName = getFormName(uncorrelatedAccount)
                     form = forms.find((x) => x.name! === formName)
+                    if (
+                        !uncorrelatedAccount.name ||
+                        (processedAccount && !form) ||
+                        uncorrelatedAccount.sourceId === source.id
+                    ) {
+                        continue
+                    }
                     if (form) {
                         currentFormInstance = formInstances.find(
                             (x) => x.formDefinitionId === form!.id && !['COMPLETED', 'CANCELLED'].includes(x.state!)
@@ -364,7 +368,7 @@ export const orphan = async (config: any) => {
 
                         const inputForm = new OrphanForm(
                             formName,
-                            formOwner,
+                            formOwner,  
                             uncorrelatedAccount,
                             similarMatches,
                             attributes

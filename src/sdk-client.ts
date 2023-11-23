@@ -23,6 +23,9 @@ import {
     WorkflowOAuthClientBeta,
     IdentityProfilesBetaApi,
     IdentityAttributeConfigBeta,
+    SourcesAggregationCCApi,
+    ApplicationsCCApi,
+    AccountsCCApi,
 } from 'sailpoint-api-client'
 import { AxiosRequestConfig } from 'axios'
 import {

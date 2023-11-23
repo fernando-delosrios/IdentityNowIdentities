@@ -291,6 +291,11 @@ export const merging = async (config: any) => {
                                 outstandingReviews.push(currentReview.value!)
                             }
                         }
+                    } else {
+                        const message = 'No matching identity found'
+                        const account = new MergedAccount(ui.attributes!.uid, message, 'auto')
+
+                        updateAccounts(account, accounts)
                     }
                 } catch (e) {
                     if (e instanceof Error) {
