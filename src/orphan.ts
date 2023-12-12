@@ -183,7 +183,9 @@ export const orphan = async (config: any) => {
         const processedAccounts: Account[] = await client.listAccountsBySource(source.id!)
         const uncorrelatedAccounts = await client.listUncorrelatedAccounts()
         const unprocessedAccounts = uncorrelatedAccounts.filter(
-            (x) => !processedAccounts.find((y) => x.name === y.name && x.sourceName === y.attributes.source)
+            (x) =>
+                !processedAccounts.find((y) => x.name === y.name && x.sourceName === y.attributes.source) &&
+                x.sourceId !== source.id
         )
 
         // Get existing accounts
