@@ -11,15 +11,7 @@ import {
 import { SDKClient } from './sdk-client'
 import { MergedAccount } from './model/account'
 import { UniqueForm } from './model/form'
-import {
-    Account,
-    BaseAccount,
-    FormDefinitionInputBeta,
-    FormDefinitionResponseBeta,
-    FormInstanceResponseBeta,
-    IdentityDocument,
-    WorkflowBeta,
-} from 'sailpoint-api-client'
+import { Account, BaseAccount, FormInstanceResponseBeta, IdentityDocument, WorkflowBeta } from 'sailpoint-api-client'
 import { Review } from './model/review'
 import { Email, ErrorEmail } from './model/email'
 import {
@@ -29,6 +21,7 @@ import {
     getCurrentSource,
     getEmailWorkflow,
     getIdentities,
+    getInputFromDescription,
     getOwnerFromSource,
     MSDAY,
     WORKFLOW_NAME,
@@ -103,17 +96,15 @@ export const merging = async (config: any) => {
 
     const logErrors = async (workflow: WorkflowBeta | undefined, context: Context, input: any, errors: string[]) => {
         let lines = []
-        lines.push(`Context: ${JSON.stringify(context)}`)
-        lines.push(`Input: ${JSON.stringify(input)}`)
-        lines.push('Errors:')
+        lines.push(`<p>Context: ${JSON.stringify(context)}</p>`)
+        lines.push(`<p>Input: ${JSON.stringify(input)}</p>`)
+        lines.push('<p>Errors:</p>')
         lines = [...lines, ...errors]
-        const message = lines.join('\n')
-        const recipient = await client.getIdentity(source!.id!)
-        const email = new ErrorEmail(source, recipient!.attributes!.email, message)
+        const message = lines.map((x) => `<p>${x}</p>`).join('\n')
+        const recipient = await client.getIdentity(owner.id!)
+        const email = new ErrorEmail(source, recipient!.email!, message)
 
-        if (workflow) {
-            await client.testWorkflow(workflow!.id!, email)
-        }
+        await sendEmail(email)
     }
 
     const getFormName = (identity: IdentityDocument): string => {
@@ -123,7 +114,7 @@ export const merging = async (config: any) => {
     const processManualReviews = async (
         currentFormInstance: FormInstanceResponseBeta
     ): Promise<{ [key: string]: any }> => {
-        let id: string | undefined
+        let name: string | undefined
         let message: string | undefined
         let state = currentFormInstance.state
         let error: string | undefined
@@ -134,20 +125,19 @@ export const merging = async (config: any) => {
             if (reviewer) {
                 const reviewerName = reviewer.displayName ? reviewer.displayName : reviewer.name
                 if (decision === UniqueForm.NEW_IDENTITY) {
-                    id = currentFormInstance.formInput!.id.toString()
+                    name = currentFormInstance.formInput!.name.toString()
                     message = `New identity approved by ${reviewerName}`
                 } else {
-                    id = decision
-                    const account = currentFormInstance.formInput!.account.toString()
+                    name = decision
                     const source = currentFormInstance.formInput!.source.toString()
-                    message = `Assignment of ${account} from ${source} approved by ${reviewerName}`
+                    message = `Assignment of ${name} from ${source} approved by ${reviewerName}`
                 }
             } else {
                 error = `Recipient for form not found (${decision})`
             }
         }
 
-        return { id, message, state, error }
+        return { name, message, state, error }
     }
 
     //==============================================================================================================
@@ -157,7 +147,7 @@ export const merging = async (config: any) => {
             logger.info('Test successful!')
             res.send({})
         } else {
-            throw new ConnectorError('Unable to connect to IdentityNow! Please check your Username and Password')
+            throw new ConnectorError('Unable to connect to IdentityNow! Please check your configuration')
         }
     }
 
@@ -165,15 +155,10 @@ export const merging = async (config: any) => {
         const accounts: MergedAccount[] = []
         const errors: string[] = []
 
+        // Get identities by status
         const { identities, processedIdentities, unprocessedIdentities } = await getIdentities(client, source)
 
-        const processedAccounts: Account[] = await client.listAccountsBySource(source.id!)
-
-        for (const pa of processedAccounts) {
-            const account = new MergedAccount(pa)
-            accounts.push(account)
-        }
-
+        // Check and process reviewer configuration
         const reviewerIdentities = identities.filter((x) => reviewers.includes(x.attributes!.uid))
         if (reviewerIdentities.length === 0) {
             const error = 'No reviewers were found'
@@ -194,108 +179,138 @@ export const merging = async (config: any) => {
             updateAccounts(account, accounts)
         }
 
+        // Get existing accounts
+        const processedAccounts: Account[] = await client.listAccountsBySource(source.id!)
+
+        for (const pa of processedAccounts) {
+            const account = new MergedAccount(pa)
+            updateAccounts(account, accounts)
+        }
+
+        // Get current review-related data
         const outstandingReviews: string[] = []
         const forms = await client.listForms()
         const formInstances = await client.listFormInstances()
         const reviews = await client.listEntitlementsBySource(source.id!)
 
-        for (const ui of unprocessedIdentities) {
-            const formName = getFormName(ui)
-            const currentReview = reviews.find((x) => x.name === formName)
-            const currentForm = forms.find((x) => x.name === formName)
+        const firstRun = processedIdentities.length === 0
 
-            if (processedIdentities.length > 0) {
+        // First run processing
+        if (firstRun) {
+            for (const ui of unprocessedIdentities) {
+                const message = 'Found on first run'
+                const account = new MergedAccount(ui.attributes!.uid, message, 'initial')
+
+                updateAccounts(account, accounts)
+            }
+        } else {
+            // Process new identities
+            for (const ui of unprocessedIdentities) {
+                const formName = getFormName(ui)
+                const currentReview = reviews.find((x) => x.name === formName)
+                const currentForm = forms.find((x) => x.name === formName)
+                const currentFormInstance = currentForm
+                    ? formInstances.find((x) => x.formDefinitionId === currentForm.id)
+                    : undefined
+
                 try {
                     const unprocessedAccount = getAccountFromIdentity(
                         ui,
                         ui.attributes!.cloudAuthoritativeSource
                     ) as BaseAccount
-                    const identicalMatch = findIdenticalMatch(ui, processedIdentities, attributes)
-
-                    if (identicalMatch) {
-                        const uniqueAccount = processedAccounts.find(
-                            (x) => x.identityId === identicalMatch.id
-                        ) as Account
-
-                        await client.correlateAccount(identicalMatch.id, unprocessedAccount.id!)
-                        const message = 'Identical match found'
-                        const account = new MergedAccount(uniqueAccount.name, message, 'auto')
-                        updateAccounts(account, accounts)
-                        continue
-                    } else if (currentReview && currentForm) {
-                        const currentFormInstance = formInstances.find(
-                            (x) => x.formDefinitionId === currentReview.value
-                        )
+                    // Process existing review
+                    if (currentForm && currentFormInstance && currentReview) {
                         let finished = false
-                        if (currentFormInstance) {
-                            const {
-                                id: identityMatchId,
-                                message,
-                                state,
-                                error,
-                            } = await processManualReviews(currentFormInstance)
-                            if (error) {
+                        const {
+                            name: identityMatchName,
+                            message,
+                            state,
+                            error,
+                        } = await processManualReviews(currentFormInstance)
+                        if (error) {
+                            logger.error(error)
+                            errors.push(error)
+                        }
+
+                        switch (state) {
+                            case 'COMPLETED':
+                                const identityMatch = processedIdentities.find((x) => x.name === identityMatchName)
+                                let account: MergedAccount
+                                if (identityMatch) {
+                                    const uniqueAccount = processedAccounts.find(
+                                        (x) => x.identityId === identityMatch.id
+                                    ) as Account
+                                    await client.correlateAccount(identityMatch.id, unprocessedAccount.id!)
+                                    account = new MergedAccount(uniqueAccount.name, message, 'manual')
+                                } else {
+                                    const uniqueID = ui.attributes!.uid
+                                    account = new MergedAccount(uniqueID, message, 'authorized')
+                                }
+
+                                updateAccounts(account, accounts)
+                                finished = true
+                                break
+
+                            case 'CANCELLED':
+                                logger.info(`${formName} was cancelled`)
+                                finished = true
+                                break
+
+                            default:
+                                logger.info(`No decision made yet for ${formName}`)
+                        }
+
+                        if (finished) {
+                            try {
+                                logger.info(`Deleting form ${currentForm.name}`)
+                                await client.deleteForm(currentForm.id!)
+                            } catch (e) {
+                                const error = `Error deleting form with ID ${currentReview!.value!}`
                                 logger.error(error)
                                 errors.push(error)
                             }
+                            // Add existing reviews as entitlements for reviewers
+                        } else {
+                            outstandingReviews.push(currentReview.value!)
+                        }
+                        // No review found so process anew
+                    } else {
+                        // Check if form exists before creating a new one
+                        if (currentForm) {
+                            const error = `${formName} form found without matching form instance. Please aggregate entitlements first or delete the form and try again.`
+                            logger.error(error)
+                            errors.push(error)
+                            continue
+                        }
 
-                            switch (state) {
-                                case 'COMPLETED':
-                                    const identityMatch = processedIdentities.find((x) => x.id === identityMatchId)
-                                    let account: MergedAccount
-                                    if (identityMatch) {
-                                        const uniqueAccount = processedAccounts.find(
-                                            (x) => x.identityId === identityMatch.id
-                                        ) as Account
-                                        await client.correlateAccount(identityMatch.id, unprocessedAccount.id!)
-                                        account = new MergedAccount(uniqueAccount.name, message, 'manual')
-                                    } else {
-                                        const uniqueID = ui.attributes!.uid
-                                        account = new MergedAccount(uniqueID, message, 'authorized')
-                                    }
+                        // Check if identical match exists
+                        const identicalMatch = findIdenticalMatch(ui, processedIdentities, attributes)
+                        if (identicalMatch) {
+                            const uniqueAccount = processedAccounts.find(
+                                (x) => x.identityId === identicalMatch.id
+                            ) as Account
 
-                                    updateAccounts(account, accounts)
-                                    finished = true
-                                    break
+                            await client.correlateAccount(identicalMatch.id, unprocessedAccount.id!)
+                            const message = 'Identical match found'
+                            const account = new MergedAccount(uniqueAccount.name, message, 'auto')
+                            updateAccounts(account, accounts)
+                            // Check if similar match exists
+                        } else {
+                            const similarMatches = findSimilarMatches(ui, processedIdentities, attributes, score)
+                            // Create form but leave entitlement aggregation create instance and send email notification
+                            if (similarMatches.length > 0) {
+                                const formOwner = { id: source.owner.id, type: source.owner.type }
+                                const inputForm = new UniqueForm(formName, formOwner, ui, similarMatches, attributes)
+                                const form = await client.createForm(inputForm)
 
-                                case 'CANCELLED':
-                                    logger.info(`${formName} was cancelled`)
-                                    finished = true
-                                    break
-
-                                case 'ASSIGNED':
-                                    logger.info(`Sending email notifications for ${formName}`)
-                                    const reviewerEmails = reviewerIdentities.map(
-                                        (x) => x.attributes!.email
-                                    ) as string[]
-                                    const email = new Email(reviewerEmails, formName, currentFormInstance)
-                                    await sendEmail(email)
-
-                                    await client.setFormInstanceState(currentFormInstance.id!, 'IN_PROGRESS')
-                                    break
-
-                                default:
-                                    logger.info(`No decision made yet for ${formName}`)
-                            }
-
-                            if (finished) {
-                                try {
-                                    logger.info(`Deleting form ${currentForm.name}`)
-                                    await client.deleteForm(currentReview!.value!)
-                                } catch (e) {
-                                    const error = `Error deleting form with ID ${currentReview!.value!}`
-                                    logger.error(error)
-                                    errors.push(error)
-                                }
+                                // No matching existing identity found
                             } else {
-                                outstandingReviews.push(currentReview.value!)
+                                const message = 'No matching identity found'
+                                const account = new MergedAccount(ui.attributes!.uid, message, 'unmatched')
+
+                                updateAccounts(account, accounts)
                             }
                         }
-                    } else {
-                        const message = 'No matching identity found'
-                        const account = new MergedAccount(ui.attributes!.uid, message, 'auto')
-
-                        updateAccounts(account, accounts)
                     }
                 } catch (e) {
                     if (e instanceof Error) {
@@ -303,14 +318,10 @@ export const merging = async (config: any) => {
                         errors.push(e.message)
                     }
                 }
-            } else {
-                const message = 'Found on first run'
-                const account = new MergedAccount(ui.attributes!.uid, message, 'initial')
-
-                updateAccounts(account, accounts)
             }
         }
 
+        // Add reviewer information and send
         for (const account of accounts) {
             if (reviewers.includes(account.identity)) {
                 account.attributes.reviews = outstandingReviews
@@ -319,6 +330,7 @@ export const merging = async (config: any) => {
             res.send(account)
         }
 
+        // Send errors if any
         if (errors.length > 0) {
             await logErrors(workflow, context, input, errors)
         }
@@ -328,93 +340,67 @@ export const merging = async (config: any) => {
         logger.info(input)
         const errors: string[] = []
         if (input.type === 'review') {
-            const { identities, processedIdentities, unprocessedIdentities } = await getIdentities(client, source)
+            // Get identities
+            const { identities } = await getIdentities(client, source)
 
+            // Check and process reviewer configuration
             const reviewerIdentities = identities.filter((x) => reviewers.includes(x.attributes!.uid))
-            if (reviewerIdentities.length === 0) {
-                const error = 'No reviewers were found'
-                logger.error(error)
-                errors.push(error)
-                await logErrors(workflow, context, input, errors)
-                throw new ConnectorError(
-                    'Unable to find any reviewer from the list. Please check the values exist and try again.'
+
+            // Get current review-related data
+            const forms = await client.listForms()
+            const formInstances = await client.listFormInstances()
+
+            const currentForms = forms.filter((x) => x.name?.startsWith(FORM_NAME))
+            const expire = new Date(new Date().valueOf() + MSDAY * expirationDays).toISOString()
+            //Process existing forms
+            for (const form of currentForms) {
+                const formName = form.name!
+                let currentFormInstance = formInstances.find(
+                    (x) => x.formDefinitionId === form!.id && !['COMPLETED', 'CANCELLED'].includes(x.state!)
                 )
-            } else if (reviewerIdentities.length < reviewers.length) {
-                const error = 'Some reviewers were not found'
-                logger.error(error)
-                errors.push(error)
+                const formInput = form.formInput?.reduce(getInputFromDescription, {})
+
+                // Form instance already present
+                if (currentFormInstance) {
+                    logger.info(`Previous form instance found for ${formName}`)
+                    // Create form instance for new form
+                } else {
+                    currentFormInstance = await client.createFormInstance(
+                        form.id!,
+                        formInput!,
+                        reviewerIdentities.map((x) => x.id),
+                        source.id!,
+                        expire
+                    )
+                    logger.info(
+                        `Form URL for ${reviewerIdentities.map((x) => x.name)}: ${
+                            currentFormInstance.standAloneFormUrl
+                        }`
+                    )
+                    // Send notifications
+                    logger.info(`Sending email notifications for ${formName}`)
+                    const reviewerEmails = reviewerIdentities.map((x) => x.attributes!.email) as string[]
+                    const email = new Email(reviewerEmails, formName, currentFormInstance)
+                    await sendEmail(email)
+                }
+
+                // Create review entitlement
+                const review = new Review(
+                    currentFormInstance.formDefinitionId!,
+                    formName,
+                    formInput!.id,
+                    currentFormInstance.standAloneFormUrl!
+                )
+
+                // Send entitlement
+                logger.info(review)
+                res.send(review)
             }
 
-            if (processedIdentities.length > 0 && reviewerIdentities.length > 0) {
-                const getInputFromDescription = (
-                    p: { [key: string]: string },
-                    c: FormDefinitionInputBeta
-                ): { [key: string]: string } => {
-                    p[c.id!] = c.description!
-                    return p
-                }
-                const formOwner = { id: source.owner.id, type: source.owner.type }
-                const expire = new Date(new Date().valueOf() + MSDAY * expirationDays).toISOString()
-                const forms = await client.listForms()
-                const formInstances = await client.listFormInstances()
-
-                let form: FormDefinitionResponseBeta | undefined
-                for (const ui of unprocessedIdentities) {
-                    try {
-                        let currentFormInstance: FormInstanceResponseBeta | undefined
-                        const formName = getFormName(ui)
-                        form = forms.find((x) => x.name! === formName)
-                        if (form) {
-                            currentFormInstance = formInstances.find(
-                                (x) => x.formDefinitionId === form!.id && !['COMPLETED', 'CANCELLED'].includes(x.state!)
-                            )
-                        } else {
-                            const similarMatches = findSimilarMatches(ui, processedIdentities, attributes, score)
-                            if (similarMatches.length === 0) {
-                                continue
-                            }
-                            const inputForm = new UniqueForm(formName, formOwner, ui, similarMatches, attributes)
-                            form = await client.createForm(inputForm)
-                        }
-
-                        if (currentFormInstance) {
-                            logger.info(`Previous form instance found for ${formName}`)
-                        } else {
-                            const formInput = form.formInput?.reduce(getInputFromDescription, {})
-                            currentFormInstance = await client.createFormInstance(
-                                form.id!,
-                                formInput!,
-                                reviewerIdentities.map((x) => x.id),
-                                source.id!,
-                                expire
-                            )
-                            logger.info(
-                                `Form URL for ${reviewerIdentities.map((x) => x.name)}: ${
-                                    currentFormInstance.standAloneFormUrl
-                                }`
-                            )
-                        }
-
-                        const review = new Review(
-                            currentFormInstance.formDefinitionId!,
-                            formName,
-                            ui.attributes!.uid,
-                            currentFormInstance.standAloneFormUrl!
-                        )
-
-                        logger.info(review)
-                        res.send(review)
-                    } catch (e) {
-                        if (e instanceof Error) {
-                            logger.error(e.message)
-                            errors.push(e.message)
-                        }
-                    }
-                }
+            // Send errors if any
+            if (errors.length > 0) {
+                await logErrors(workflow, context, input, errors)
             }
-        }
-        if (errors.length > 0) {
-            await logErrors(workflow, context, input, errors)
         }
     }
 

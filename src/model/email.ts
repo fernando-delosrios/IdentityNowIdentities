@@ -19,7 +19,7 @@ export class ErrorEmail implements TestWorkflowRequestBeta {
         const subject = `IdentityNow Identities [${source.name}] error report`
         const body = error
         this.input = {
-            recipients: recipient,
+            recipients: [recipient],
             subject,
             body,
         }

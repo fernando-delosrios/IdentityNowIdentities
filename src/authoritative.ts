@@ -48,17 +48,15 @@ export const authoritative = async (config: any) => {
 
     const logErrors = async (workflow: WorkflowBeta | undefined, context: Context, input: any, errors: string[]) => {
         let lines = []
-        lines.push(`Context: ${JSON.stringify(context)}`)
-        lines.push(`Input: ${JSON.stringify(input)}`)
-        lines.push('Errors:')
+        lines.push(`<p>Context: ${JSON.stringify(context)}</p>`)
+        lines.push(`<p>Input: ${JSON.stringify(input)}</p>`)
+        lines.push('<p>Errors:</p>')
         lines = [...lines, ...errors]
-        const message = lines.join('\n')
-        const recipient = await client.getIdentity(source!.id!)
-        const email = new ErrorEmail(source, recipient!.attributes!.email, message)
+        const message = lines.map((x) => `<p>${x}</p>`).join('\n')
+        const recipient = await client.getIdentity(owner.id!)
+        const email = new ErrorEmail(source, recipient!.email!, message)
 
-        if (workflow) {
-            await client.testWorkflow(workflow!.id!, email)
-        }
+        await sendEmail(email)
     }
 
     const getUniqueID = async (
@@ -116,7 +114,7 @@ export const authoritative = async (config: any) => {
             logger.info('Test successful!')
             res.send({})
         } else {
-            throw new ConnectorError('Unable to connect to IdentityNow! Please check your Username and Password')
+            throw new ConnectorError('Unable to connect to IdentityNow! Please check your configuration')
         }
     }
 

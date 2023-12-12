@@ -23,15 +23,16 @@ import {
     WorkflowOAuthClientBeta,
     IdentityProfilesBetaApi,
     IdentityAttributeConfigBeta,
-    SourcesAggregationCCApi,
-    ApplicationsCCApi,
-    AccountsCCApi,
+    EntitlementsBetaApi,
+    EntitlementBeta,
+    IdentityBeta,
+    IdentitiesBetaApiListIdentitiesRequest,
+    IdentitiesBetaApi,
 } from 'sailpoint-api-client'
 import { AxiosRequestConfig } from 'axios'
 import {
     AccountsApi,
     AccountsApiListAccountsRequest,
-    EntitlementDocument,
     IdentityDocument,
     JsonPatchOperation,
     Transform,
@@ -49,7 +50,6 @@ function sleep(ms: number) {
 
 export class SDKClient {
     private config: Configuration
-    private batchSize = 250
 
     constructor(config: any) {
         const tokenUrl = new URL(config.baseurl).origin + TOKEN_URL_PATH
@@ -90,19 +90,19 @@ export class SDKClient {
         return response.data
     }
 
-    async getIdentityByUID(uid: string): Promise<IdentityDocument | undefined> {
-        const api = new SearchApi(this.config)
-        const search: Search = {
-            indices: ['identities'],
-            query: {
-                query: `attributes.uid.exact:"${uid}"`,
-            },
-            includeNested: true,
+    async getIdentityByUID(uid: string): Promise<IdentityBeta | undefined> {
+        const api = new IdentitiesBetaApi(this.config)
+
+        const requestParameters: IdentitiesBetaApiListIdentitiesRequest = {
+            filters: `alias eq "${uid}"`,
         }
+        const response = await api.listIdentities(requestParameters)
 
-        const response = await api.searchPost({ search })
-
-        return response.data[0]
+        if (response.data.length > 0) {
+            return response.data[0]
+        } else {
+            return undefined
+        }
     }
 
     async listIdentitiesBySource(id: string): Promise<IdentityDocument[]> {
@@ -145,7 +145,7 @@ export class SDKClient {
             return await api.listAccounts({ ...requestParameters, filters })
         }
 
-        const response = await Paginator.paginate(api, search, undefined, this.batchSize)
+        const response = await Paginator.paginate(api, search)
 
         return response.data
     }
@@ -160,7 +160,7 @@ export class SDKClient {
             return await api.listAccounts({ ...requestParameters, filters })
         }
 
-        const response = await Paginator.paginate(api, search, undefined, this.batchSize)
+        const response = await Paginator.paginate(api, search)
 
         return response.data
     }
@@ -382,18 +382,19 @@ export class SDKClient {
         })
     }
 
-    async listEntitlementsBySource(sourceId: string): Promise<EntitlementDocument[]> {
-        const api = new SearchApi(this.config)
+    async listEntitlementsBySource(id: string): Promise<EntitlementBeta[]> {
+        const api = new EntitlementsBetaApi(this.config)
 
-        const search: Search = {
-            indices: ['entitlements'],
-            query: {
-                query: `source.id:${sourceId}`,
-            },
-            includeNested: true,
+        const filters = `source.id eq "${id}"`
+
+        const search = async (
+            requestParameters?: AccountsApiListAccountsRequest | undefined,
+            axiosOptions?: AxiosRequestConfig<any> | undefined
+        ) => {
+            return await api.listEntitlements({ ...requestParameters, filters })
         }
 
-        const response = await api.searchPost({ search })
+        const response = await Paginator.paginate(api, search)
 
         return response.data
     }

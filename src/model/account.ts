@@ -15,7 +15,7 @@ export class MergedAccount {
         if (typeof account === 'string') {
             history = []
         } else {
-            history = [...(account.attributes!.history as string[])]
+            history = account.attributes!.history ? [...(account.attributes.history as string[])] : []
         }
 
         if (typeof account !== 'string') {

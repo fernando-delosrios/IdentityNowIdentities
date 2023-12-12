@@ -1,4 +1,11 @@
-import { BaseAccount, IdentityDocument, Owner, Source, WorkflowBeta, WorkflowBodyOwnerBeta } from 'sailpoint-api-client'
+import {
+    BaseAccount,
+    FormDefinitionInputBeta,
+    IdentityDocument,
+    Owner,
+    Source,
+    WorkflowBeta,
+} from 'sailpoint-api-client'
 import { SDKClient } from '../sdk-client'
 import { EmailWorkflow } from '../model/emailWorkflow'
 import { findIdenticalMatch, findSimilarMatches, findAccountSimilarMatches } from './matching'
@@ -73,6 +80,14 @@ export const getIdentities = async (
     }
 
     return { identities, processedIdentities, unprocessedIdentities }
+}
+
+export const getInputFromDescription = (
+    p: { [key: string]: string },
+    c: FormDefinitionInputBeta
+): { [key: string]: string } => {
+    p[c.id!] = c.description!
+    return p
 }
 
 export { findIdenticalMatch, findSimilarMatches, findAccountSimilarMatches }
