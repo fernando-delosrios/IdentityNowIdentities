@@ -114,7 +114,7 @@ export const orphan = async (config: any) => {
     const processManualReviews = async (
         currentFormInstance: FormInstanceResponseBeta
     ): Promise<{ [key: string]: any }> => {
-        let id: string | undefined
+        let name: string | undefined
         let message: string | undefined
         let state = currentFormInstance.state
         let error: string | undefined
@@ -125,10 +125,10 @@ export const orphan = async (config: any) => {
             if (reviewer) {
                 const reviewerName = reviewer.displayName ? reviewer.displayName : reviewer.name
                 if (decision === OrphanForm.ORPHAN_ACCOUNT) {
-                    id = currentFormInstance.formInput!.id.toString()
+                    name = currentFormInstance.formInput!.name.toString()
                     message = `Orphan account confirmed by ${reviewerName}`
                 } else {
-                    id = decision
+                    name = decision
                     const source = currentFormInstance.formInput!.source.toString()
                     message = `Assignment of ${name} from ${source} approved by ${reviewerName}`
                 }
@@ -137,7 +137,7 @@ export const orphan = async (config: any) => {
             }
         }
 
-        return { id, message, state, error }
+        return { name, message, state, error }
     }
 
     //==============================================================================================================
@@ -182,6 +182,9 @@ export const orphan = async (config: any) => {
         // Get accounts
         const processedAccounts: Account[] = await client.listAccountsBySource(source.id!)
         const uncorrelatedAccounts = await client.listUncorrelatedAccounts()
+        const unprocessedAccounts = uncorrelatedAccounts.filter(
+            (x) => !processedAccounts.find((y) => x.name === y.name && x.sourceName === y.attributes.source)
+        )
 
         // Get existing accounts
         for (const pa of processedAccounts) {
@@ -195,7 +198,7 @@ export const orphan = async (config: any) => {
         const formInstances = await client.listFormInstances()
         const reviews = await client.listEntitlementsBySource(source.id!)
 
-        for (const uncorrelatedAccount of uncorrelatedAccounts) {
+        for (const uncorrelatedAccount of unprocessedAccounts) {
             if (uncorrelatedAccount.name) {
                 const formName = getFormName(uncorrelatedAccount)
                 const currentReview = reviews.find((x) => x.name === formName)
@@ -288,7 +291,6 @@ export const orphan = async (config: any) => {
                         )
                         logger.info(`Creating form ${formName}`)
                         const form = await client.createForm(inputForm)
-                        throw new Error('')
                     }
                 } catch (e) {
                     if (e instanceof Error) {
