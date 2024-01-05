@@ -1,7 +1,6 @@
 import { Account, IdentityDocument } from 'sailpoint-api-client'
 import { lig3 } from './lig'
 import { buildAttributeObject } from '.'
-import { Attributes } from '@sailpoint/connector-sdk'
 
 export const findIdenticalMatch = (
     identity: IdentityDocument,
