@@ -17,6 +17,10 @@ import { getOwnerFromSource, getCurrentSource, WORKFLOW_NAME, getEmailWorkflow, 
 import { Email, ErrorEmail } from './model/email'
 import { UniqueAccount } from './model/account'
 
+const sleep = (ms: number) => {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 const buildUniqueAccount = (account: Account): UniqueAccount => {
     return {
         identity: account.nativeIdentity,
@@ -64,7 +68,7 @@ export const authoritative = async (config: any) => {
         currentIDs: string[],
         transformName: string | undefined,
         source: Source
-    ): Promise<string | undefined> => {
+    ): Promise<{ id: string; counter: number } | undefined> => {
         const transformRequest = new UniqueIDTransform(source.name)
         let name: string
 
@@ -76,7 +80,6 @@ export const authoritative = async (config: any) => {
 
         let transform = await client.getTransformByName(name)
         if (!transform) {
-            const transformRequest = new UniqueIDTransform(source.name)
             transform = await client.createTransform(transformRequest)
         }
 
@@ -90,21 +93,25 @@ export const authoritative = async (config: any) => {
                 type: 'reference',
             },
         }
-        const config: IdentityAttributeConfigBeta = {
+        const identityAttributeConfig: IdentityAttributeConfigBeta = {
             attributeTransforms: [{ identityAttributeName: 'uid', transformDefinition }],
             enabled: true,
         }
 
-        let counter = 1
-        let id = await client.testTransform(identity.id, config)
-        let candidate = id
+        let counter = 0
+        let id = await client.testTransform(identity.id, identityAttributeConfig)
         if (id) {
-            while (currentIDs.includes(candidate!)) {
-                candidate = id + counter++
+            let candidate = id
+            if (id) {
+                while (currentIDs.includes(candidate!)) {
+                    candidate = id + ++counter
+                }
             }
-        }
 
-        return candidate
+            return { id: candidate, counter }
+        } else {
+            logger.error('No value returned by transform')
+        }
     }
 
     //==============================================================================================================
@@ -133,23 +140,29 @@ export const authoritative = async (config: any) => {
                     const account = buildUniqueAccount(currentAccount)
                     accounts.push(account)
                 } else {
-                    const uniqueID = await getUniqueID(identity, currentIDs, transform, source)
-                    if (uniqueID) {
-                        currentIDs.push(uniqueID)
-                        const account: UniqueAccount = {
-                            identity: uniqueID,
-                            uuid: identity.attributes!.uid,
-                            attributes: {
-                                id: uniqueID,
-                                name: identity.attributes!.uid,
-                                email: identity.attributes!.email,
-                            },
+                    const response = await getUniqueID(identity, currentIDs, transform, source)
+                    await sleep(100)
+                    if (response) {
+                        const { id: uniqueID, counter } = response
+                        if (uniqueID) {
+                            currentIDs.push(uniqueID)
+                            const account: UniqueAccount = {
+                                identity: uniqueID,
+                                uuid: identity.attributes!.uid,
+                                attributes: {
+                                    id: uniqueID,
+                                    name: identity.attributes!.uid,
+                                    email: identity.attributes!.email,
+                                    counter: counter === 0 ? null : counter,
+                                },
+                            }
+                            logger.info(account)
+                            accounts.push(account)
+                        } else {
+                            const error = `Failed to generate unique ID for ${identity.attributes!.uid}`
+                            logger.error(error)
+                            errors.push(error)
                         }
-                        accounts.push(account)
-                    } else {
-                        const error = `Failed to generate unique ID for ${identity.attributes!.uid}`
-                        logger.error(error)
-                        errors.push(error)
                     }
                 }
             } catch (error) {
@@ -202,6 +215,11 @@ export const authoritative = async (config: any) => {
             {
                 name: 'email',
                 description: 'Email',
+                type: 'string',
+            },
+            {
+                name: 'counter',
+                description: 'Counter',
                 type: 'string',
             },
         ]
