@@ -27,8 +27,8 @@ export const findSimilarMatches = (
     candidates: IdentityDocument[],
     attributes: string[],
     score: number
-): IdentityDocument[] => {
-    const similarMatches: IdentityDocument[] = []
+): { identity: IdentityDocument; score: number }[] => {
+    const similarMatches: { identity: IdentityDocument; score: number }[] = []
     const length = attributes.length
 
     for (const candidate of candidates) {
@@ -49,7 +49,7 @@ export const findSimilarMatches = (
             }, 0) / length
 
         if (finalScore * 100 >= score) {
-            similarMatches.push(candidate)
+            similarMatches.push({ identity: candidate, score: finalScore })
         }
     }
 

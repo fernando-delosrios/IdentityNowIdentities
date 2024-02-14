@@ -439,17 +439,19 @@ export class UniqueForm implements CreateFormDefinitionRequestBeta {
         name: string,
         owner: SourceOwner,
         identity: IdentityDocument,
-        targets: IdentityDocument[],
+        targets: { identity: IdentityDocument; score: number }[],
         attributes: string[]
     ) {
         this.name = name
         this.owner = owner
         this.formInput = []
+        const identities = targets.map((x) => x.identity)
         for (const attribute of attributes) {
             for (const target of targets) {
-                if (attribute in target.attributes!) {
-                    const name = `${target.name}.${attribute}`
-                    this.formInput.push(buildFormDefinitionInput(name, target.attributes![attribute]))
+                this.formInput.push(buildFormDefinitionInput('Matching score', target.score))
+                if (attribute in target.identity.attributes!) {
+                    const name = `${target.identity.name}.${attribute}`
+                    this.formInput.push(buildFormDefinitionInput(name, target.identity.attributes![attribute]))
                 }
             }
             const name = `${UniqueForm.NEW_IDENTITY}.${attribute}`
@@ -463,7 +465,7 @@ export class UniqueForm implements CreateFormDefinitionRequestBeta {
         // this.formInput.push(buildFormDefinitionInput('account', nativeAccount.name))
         this.formInput.push(buildFormDefinitionInput('source', nativeAccount.source?.name))
 
-        const options = buildOptions(targets, 'This is a new identity', UniqueForm.NEW_IDENTITY)
+        const options = buildOptions(identities, 'This is a new identity', UniqueForm.NEW_IDENTITY)
         const label = 'Identity merge request'
         const description =
             'Potentially duplicated identity was found. Please review the list of possible matches from existing identities and select the right one.'
@@ -473,11 +475,11 @@ export class UniqueForm implements CreateFormDefinitionRequestBeta {
 
         this.formElements = [topSection, identitiesSection]
         for (const target of targets) {
-            const section = buildSelectionSection(target, attributes)
+            const section = buildSelectionSection(target.identity, attributes)
             this.formElements.push(section)
         }
 
-        this.formConditions = buildUniqueFormConditions(attributes, targets, UniqueForm.NEW_IDENTITY)
+        this.formConditions = buildUniqueFormConditions(attributes, identities, UniqueForm.NEW_IDENTITY)
     }
 }
 

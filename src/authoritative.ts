@@ -16,6 +16,7 @@ import { UniqueIDTransform } from './model/transform'
 import { getOwnerFromSource, getCurrentSource, WORKFLOW_NAME, getEmailWorkflow, getIdentities } from './utils'
 import { Email, ErrorEmail } from './model/email'
 import { UniqueAccount } from './model/account'
+import { transliterate } from 'transliteration'
 
 const sleep = (ms: number) => {
     return new Promise((resolve) => setTimeout(resolve, ms))
@@ -30,7 +31,17 @@ const buildUniqueAccount = (account: Account): UniqueAccount => {
 }
 
 export const authoritative = async (config: any) => {
-    const { baseurl, clientId, clientSecret, 'authoritative.transform': transform, id } = config
+    const {
+        baseurl,
+        clientId,
+        clientSecret,
+        id,
+        'authoritative.transform': transform,
+        'authoritative.normalize': normalize,
+        'authoritative.spaces': spaces,
+        'authoritative.case': stringCase,
+        'authoritative.digits': digits,
+    } = config
     const client = new SDKClient({ baseurl, clientId, clientSecret })
     const source = await getCurrentSource(client, config)
 
@@ -102,15 +113,36 @@ export const authoritative = async (config: any) => {
         let id = await client.testTransform(identity.id, identityAttributeConfig)
         if (id) {
             let candidate = id
+            if (normalize) {
+                candidate = transliterate(candidate)
+            }
+
+            if (spaces) {
+                candidate = candidate.replace(/\s/, '')
+            }
+
+            switch (stringCase) {
+                case 'lower':
+                    candidate = candidate.toLowerCase()
+                    break
+                case 'upper':
+                    candidate = candidate.toUpperCase()
+                    break
+                default:
+                    break
+            }
+
             if (id) {
                 while (currentIDs.includes(candidate!)) {
-                    candidate = id + ++counter
+                    counter++
+                    const suffix = '0'.repeat(Math.max(0, digits - counter.toString().length)) + counter
+                    candidate = id + suffix
                 }
             }
 
             return { id: candidate, counter }
         } else {
-            logger.error('No value returned by transform')
+            throw new Error('No value returned by transform')
         }
     }
 

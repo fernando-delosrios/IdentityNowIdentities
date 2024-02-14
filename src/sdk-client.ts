@@ -28,6 +28,10 @@ import {
     IdentityBeta,
     IdentitiesBetaApiListIdentitiesRequest,
     IdentitiesBetaApi,
+    WorkgroupDtoBeta,
+    GovernanceGroupsBetaApi,
+    GovernanceGroupsV2Api,
+    ListWorkgroupMembers200ResponseInnerV2,
 } from 'sailpoint-api-client'
 import { AxiosRequestConfig } from 'axios'
 import {
@@ -220,6 +224,21 @@ export class SDKClient {
     //         return []
     //     }
     // }
+
+    async listWorkgroups(): Promise<WorkgroupDtoBeta[]> {
+        const api = new GovernanceGroupsBetaApi(this.config)
+
+        const response = await Paginator.paginate(api, api.listWorkgroups)
+
+        return response.data
+    }
+
+    async listWorkgroupMembers(workgroupId: string): Promise<ListWorkgroupMembers200ResponseInnerV2[]> {
+        const api = new GovernanceGroupsV2Api(this.config)
+        const response = await api.listWorkgroupMembers({ workgroupId })
+
+        return response.data
+    }
 
     async listSources() {
         const api = new SourcesApi(this.config)

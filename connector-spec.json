@@ -69,11 +69,48 @@
                             ]
                         },
                         {
-                            "key": "authoritative.transform",
-                            "label": "Unique ID custom transform (optional)",
+                            "key": "authoritative.normalize",
+                            "label": "Normalize special characters?",
+                            "type": "checkbox",
+                            "parentKey": "mode",
+                            "parentValue": "authoritative"
+                        },
+                        {
+                            "key": "authoritative.spaces",
+                            "label": "Remove spaces?",
                             "type": "text",
                             "parentKey": "mode",
                             "parentValue": "authoritative"
+                        },
+                        {
+                            "key": "authoritative.digits",
+                            "label": "Minimum counter digits",
+                            "type": "number",
+                            "required": true,
+                            "parentKey": "mode",
+                            "parentValue": "authoritative"
+                        },
+                        {
+                            "key": "authoritative.case",
+                            "label": "Case selection",
+                            "type": "radio",
+                            "parentKey": "mode",
+                            "parentValue": "authoritative",
+                            "required": false,
+                            "options": [
+                                {
+                                    "label": "Do not change",
+                                    "value": "same"
+                                },
+                                {
+                                    "label": "Lower case",
+                                    "value": "lower"
+                                },
+                                {
+                                    "label": "Upper case",
+                                    "value": "upper"
+                                }
+                            ]
                         },
                         {
                             "key": "merging.attributes",
@@ -84,9 +121,17 @@
                             "parentValue": "merging"
                         },
                         {
-                            "key": "merging.reviewers",
-                            "label": "Manual reviewers list (UID)",
+                            "key": "merging.identity_attributes",
+                            "label": "List of identity attributes to include in form",
                             "type": "list",
+                            "required": false,
+                            "parentKey": "mode",
+                            "parentValue": "merging"
+                        },
+                        {
+                            "key": "merging.reviewer",
+                            "label": "Manual reviewer identity or governance group",
+                            "type": "text",
                             "required": true,
                             "parentKey": "mode",
                             "parentValue": "merging"
